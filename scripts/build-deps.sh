@@ -48,6 +48,10 @@ build_vorbis() {
     fetch_source vorbis https://github.com/xiph/vorbis.git "$VORBIS_VERSION"
     cd "$SRC_DIR/vorbis"
     ./autogen.sh
+    # vorbis 1.3.7 hardcodes the legacy Apple linker flag -force_cpusubtype_ALL
+    # for Darwin hosts. Every ld shipped with a current Xcode rejects it, so the
+    # generated configure is patched before it is used.
+    sed -i.bak 's/-force_cpusubtype_ALL//g' configure
     ./configure --prefix="$PREFIX" --with-ogg="$PREFIX" --enable-static --disable-shared
     make -j"$JOBS"
     make install

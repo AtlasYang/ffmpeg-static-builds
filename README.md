@@ -48,7 +48,7 @@ through FFmpeg's own LGPL decoders. Available video encoders are VP8, VP9
 ## Included third-party libraries
 
 All dependencies are built from source at pinned versions
-(see [`scripts/common.sh`](scripts/common.sh)); nothing is taken from the CI
+(see [`scripts/versions.sh`](scripts/versions.sh)); nothing is taken from the CI
 runner image.
 
 | Library                                           | Version | License                               | Purpose         |
@@ -195,6 +195,7 @@ they describe - a link into a CI log that expires is not enough for an audit.
 1. Actions → **Build FFmpeg (LGPL)** → **Run workflow**
 2. `ffmpeg_version` - the FFmpeg git tag to build, e.g. `n9.0.1`
 3. `draft_release` - create the release as a draft instead of publishing it
+4. `rebuild_deps` - ignore the dependency cache and rebuild every library
 
 All five targets build in parallel; the release is only cut once every target has
 succeeded and passed the license gate. The release is tagged
@@ -202,8 +203,10 @@ succeeded and passed the license gate. The release is tagged
 collides with an existing tag.
 
 The dependency prefix is cached per target and keyed on the hash of
-`scripts/common.sh` and `scripts/build-deps.sh`. Bumping a pinned version
-invalidates the cache automatically; libaom dominates a cold build.
+`scripts/versions.sh`, so bumping a pinned version invalidates the cache while
+editing a build script does not. If you change *how* a library is built, run the
+workflow with `rebuild_deps` enabled to force a cold build - libaom dominates
+that path.
 
 ### Locally
 
@@ -230,7 +233,8 @@ glibc, so it will not carry the 2.35 floor that the CI container guarantees.
 .
 ├── .github/workflows/build.yml   # 5-target matrix, manual dispatch, release
 ├── scripts/
-│   ├── common.sh                 # pinned versions, platform detection, paths
+│   ├── versions.sh               # pinned dependency versions (the cache key)
+│   ├── common.sh                 # platform detection, paths, toolchain env
 │   ├── install-build-tools.sh    # toolchain per platform (build tools only)
 │   ├── build-deps.sh             # third-party libraries, static, from source
 │   ├── build-ffmpeg.sh           # configure options + build + binary extraction
@@ -260,7 +264,7 @@ platforms. The Windows executables are fully static.
 
 1. Confirm the license is BSD/MIT/Apache style. **Anything GPL, nonfree, or
    version3-only is out** - it would fail `scripts/verify-license.sh` anyway.
-2. Pin the version in `scripts/common.sh` and add a `build_*` function to
+2. Pin the version in `scripts/versions.sh` and add a `build_*` function to
    `scripts/build-deps.sh` producing a static archive in `$PREFIX`.
 3. Add the matching `--enable-*` to `CONFIGURE_ARGS` in
    `scripts/build-ffmpeg.sh` - `--disable-autodetect` means an unlisted library

@@ -3,24 +3,9 @@
 # Source this file, do not execute it:  . scripts/common.sh
 set -euo pipefail
 
-# -----------------------------------------------------------------------------
-# Pinned dependency versions.
-#
-# Every library listed here is BSD/MIT/Apache-style licensed and therefore safe
-# to link into an LGPL-2.1-or-later FFmpeg build. Do NOT add a library without
-# checking its license first - see README.md for the policy.
-#
-# Bumping any version here changes the dependency cache key automatically,
-# because the cache key is derived from the hash of this file.
-# -----------------------------------------------------------------------------
-ZLIB_VERSION="v1.3.1"       # zlib license
-OGG_VERSION="v1.3.6"        # BSD-3-Clause
-VORBIS_VERSION="v1.3.7"     # BSD-3-Clause
-OPUS_VERSION="v1.6.1"       # BSD-3-Clause
-VPX_VERSION="v1.17.0"       # BSD-3-Clause
-DAV1D_VERSION="1.5.4"       # BSD-2-Clause
-AOM_VERSION="v3.15.0"       # BSD-2-Clause + Alliance for Open Media Patent License
-WEBP_VERSION="v1.6.0"       # BSD-3-Clause
+# Pinned dependency versions live in their own file because the CI dependency
+# cache is keyed on that file alone.
+. "$(dirname "${BASH_SOURCE[0]}")/versions.sh"
 
 # -----------------------------------------------------------------------------
 # Platform / architecture detection
@@ -49,7 +34,7 @@ BUILD_ROOT="${BUILD_ROOT:-$REPO_ROOT/build}"
 SRC_DIR="$BUILD_ROOT/src"
 PREFIX="$BUILD_ROOT/prefix"
 DIST_DIR="${DIST_DIR:-$REPO_ROOT/dist}"
-mkdir -p "$SRC_DIR" "$PREFIX" "$DIST_DIR"
+mkdir -p "$SRC_DIR" "$PREFIX/lib" "$PREFIX/include" "$PREFIX/bin" "$DIST_DIR"
 
 # Executable suffix and the asset base name shared by the archive and the log.
 if [ "$PLATFORM" = "win" ]; then EXE=".exe"; else EXE=""; fi

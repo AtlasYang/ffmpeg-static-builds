@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: false
+      rebuild_deps:
+        description: "Ignore the dependency cache and rebuild every library from source"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -151,7 +156,7 @@ jobs:
           git config --global --add safe.directory '*'
 
       - name: Checkout build scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up MSYS2 toolchain
         if: matrix.platform == 'win'
@@ -166,14 +171,17 @@ jobs:
             git
 
       # The dependency prefix is expensive to produce (libaom alone dominates the
-      # build time), and it only changes when a pinned version in
-      # scripts/common.sh changes - which is exactly what the cache key tracks.
+      # build time). The key tracks scripts/versions.sh only: editing a build
+      # script must not discard a good set of compiled libraries, and a partial
+      # prefix left behind by a failed job lets the next run resume instead of
+      # starting over. Use the rebuild_deps input for a cold build.
       - name: Restore dependency cache
         id: deps-cache
-        uses: actions/cache@v4
+        if: ${{ !inputs.rebuild_deps }}
+        uses: actions/cache@v6
         with:
           path: build/prefix
-          key: ffmpeg-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('scripts/common.sh', 'scripts/build-deps.sh') }}
+          key: ffmpeg-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('scripts/versions.sh') }}
 
       - name: Install build tools
         run: bash scripts/install-build-tools.sh
@@ -195,7 +203,7 @@ jobs:
         run: bash scripts/package.sh
 
       - name: Upload build output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ASSET_BASE }}
           if-no-files-found: error
@@ -213,12 +221,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # merge-multiple flattens the five per-target artifacts into one directory
       # holding 5 archives and 5 configure logs.
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -242,7 +250,7 @@ jobs:
           cat release-notes.md
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           name: FFmpeg ${{ needs.prepare.outputs.version }} (LGPL) - build ${{ github.run_number }}
