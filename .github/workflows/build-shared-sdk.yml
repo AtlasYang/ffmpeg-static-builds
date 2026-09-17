@@ -1,0 +1,201 @@
+# Independent shared SDK release line. This workflow does not call or
+# modify the existing static ffmpeg/ffprobe build pipeline.
+name: Build FFmpeg shared SDK (LGPL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft_release:
+        description: "Create the GitHub Release as a draft"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_TAG: n8.0.3
+  VERSION: 8.0.3
+
+jobs:
+  prepare:
+    name: Prepare shared SDK metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+    steps:
+      - name: Compute independent release tag
+        id: meta
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          echo "release_tag=ffmpeg-8.0.3-shared-build${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build shared SDK ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win
+            arch: x64
+            runner: windows-latest
+            container: ""
+            shell: "msys2 {0}"
+            archive: zip
+          - platform: linux
+            arch: x64
+            runner: ubuntu-latest
+            container: "ubuntu:22.04"
+            shell: bash
+            archive: tar.gz
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            container: "ubuntu:22.04"
+            shell: bash
+            archive: tar.gz
+          - platform: macos
+            arch: arm64
+            runner: macos-latest
+            container: ""
+            shell: bash
+            archive: tar.gz
+          - platform: macos
+            arch: x64
+            runner: macos-15-intel
+            container: ""
+            shell: bash
+            archive: tar.gz
+
+    env:
+      ASSET_BASE: ffmpeg-8.0.3-shared-${{ matrix.platform }}-${{ matrix.arch }}
+
+    steps:
+      - name: Bootstrap Linux container
+        if: matrix.container != ''
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates git curl xz-utils
+          git config --global --add safe.directory '*'
+
+      - name: Checkout build scripts
+        uses: actions/checkout@v7
+
+      - name: Set up MSYS2 toolchain
+        if: matrix.platform == 'win'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            git
+
+      - name: Install build tools
+        run: bash scripts/install-build-tools.sh
+
+      - name: Build pinned SDK dependencies
+        run: bash scripts/build-shared-sdk-deps.sh
+
+      - name: Build shared SDK
+        run: bash scripts/build-shared-sdk.sh
+
+      - name: Verify ABI and LGPL policy
+        run: bash scripts/verify-shared-sdk.sh
+
+      - name: Package shared SDK
+        run: bash scripts/package-shared-sdk.sh
+
+      - name: Upload SDK output
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ASSET_BASE }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/${{ env.ASSET_BASE }}.${{ matrix.archive }}
+            dist/${{ env.ASSET_BASE }}.configure.txt
+
+  release:
+    name: Publish shared SDK release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@v7
+
+      - name: Download all SDK artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download and verify matching FFmpeg source
+        working-directory: artifacts
+        env:
+          SOURCE_SHA256: 6136812ea6d4e68bdba27e33c2a94382711cdf4f8602ffef056ff792bd6f9818
+          SIGNING_KEY_FINGERPRINT: FCF986EA15E6E293A5644F10B4322F04D67658D8
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output ffmpeg-8.0.3.tar.xz \
+            https://ffmpeg.org/releases/ffmpeg-8.0.3.tar.xz
+          curl --fail --location --retry 3 --output ffmpeg-8.0.3.tar.xz.asc \
+            https://ffmpeg.org/releases/ffmpeg-8.0.3.tar.xz.asc
+          curl --fail --location --retry 3 --output ffmpeg-devel.asc \
+            https://ffmpeg.org/ffmpeg-devel.asc
+          echo "$SOURCE_SHA256  ffmpeg-8.0.3.tar.xz" | sha256sum --check --strict
+          fingerprint="$(gpg --batch --show-keys --with-colons ffmpeg-devel.asc \
+            | awk -F: '$1 == "fpr" { print $10; exit }')"
+          test "$fingerprint" = "$SIGNING_KEY_FINGERPRINT"
+          gpg --batch --yes --dearmor --output ffmpeg-release-key.gpg ffmpeg-devel.asc
+          gpgv --keyring ./ffmpeg-release-key.gpg \
+            ffmpeg-8.0.3.tar.xz.asc ffmpeg-8.0.3.tar.xz
+          rm ffmpeg-release-key.gpg
+
+      - name: Generate checksums
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          sha256sum -- *.zip *.tar.gz *.configure.txt ffmpeg-8.0.3.tar.xz \
+            ffmpeg-8.0.3.tar.xz.asc ffmpeg-devel.asc \
+            > checksums.sha256
+          cat checksums.sha256
+
+      - name: Generate release notes
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          bash scripts/release-notes-shared-sdk.sh \
+            8.0.3 \
+            "${{ needs.prepare.outputs.release_tag }}" \
+            artifacts > release-notes.md
+          cat release-notes.md
+
+      - name: Create shared SDK release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: FFmpeg 8.0.3 shared SDK - build ${{ github.run_number }}
+          body_path: release-notes.md
+          draft: ${{ inputs.draft_release }}
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/*.zip
+            artifacts/*.tar.gz
+            artifacts/*.configure.txt
+            artifacts/ffmpeg-8.0.3.tar.xz
+            artifacts/ffmpeg-8.0.3.tar.xz.asc
+            artifacts/ffmpeg-devel.asc
+            artifacts/checksums.sha256

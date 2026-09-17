@@ -1,12 +1,15 @@
-# ffmpeg-static-builds
+# FFmpeg release builds
 
-LGPL-only, statically linked `ffmpeg` and `ffprobe` command line executables for
-Windows, Linux and macOS, built by GitHub Actions and published as GitHub
-Releases.
+This repository has two independent LGPL-only release lines for Windows, Linux
+and macOS:
 
-This repository builds **binaries only**. It is intentionally separate from the
-application that consumes them, so that the build inputs, the configure options
-and the license evidence of every release are recorded in one auditable place.
+- statically linked `ffmpeg` and `ffprobe` command line executables;
+- an FFmpeg 8.0.3 shared SDK for dynamic-link consumers such as rsmpeg.
+
+They use separate workflows, scripts, asset names and release tags. The shared SDK
+pipeline does not change the existing static CLI artifacts. Keeping both here
+records build inputs, configure options and license evidence in one auditable
+place without coupling either build to its consuming application.
 
 ---
 
@@ -121,7 +124,7 @@ sha256sum -c checksums.sha256 --ignore-missing
 
 ## Intended use: subprocess, not linking
 
-These are **standalone CLI executables**, statically linked. The intended
+The static CLI releases are **standalone executables**. Their intended
 consumption model - and the assumption the license analysis below rests on - is:
 
 - the downstream application bundles `ffmpeg` / `ffprobe` as resource files;
@@ -130,7 +133,8 @@ consumption model - and the assumption the license analysis below rests on - is:
   into its own binary.
 
 No `.dll`, `.so`, `.dylib`, `.a`, `.lib` or header file is published by this
-repository, so linking against these builds is not even possible.
+release line, so linking against the CLI builds is not possible. The separately
+labelled shared SDK below has a different dynamic-linking and compliance model.
 
 ### Minimum obligations for the downstream app
 
@@ -166,6 +170,59 @@ or later. FFmpeg source code for the exact version used is available at
 https://github.com/FFmpeg/FFmpeg. A copy of the LGPL-2.1 is included in this
 distribution.
 ```
+
+---
+
+## FFmpeg 8 shared SDK
+
+The **Build FFmpeg shared SDK (LGPL)** workflow is a separate release pipeline
+for dynamic-link consumers such as `rsmpeg 0.18`. It is pinned to FFmpeg 8.0.3
+and produces dynamically linked SDK archives for the same five targets as the
+static CLI pipeline.
+
+Each archive contains:
+
+- shared `avcodec`, `avdevice`, `avfilter`, `avformat`, `avutil`, `swresample`
+  and `swscale` libraries;
+- public headers for those seven libraries;
+- relocatable pkg-config files and Windows import libraries;
+- FFmpeg's LGPL license and notice files plus the zlib license.
+
+The seven-library set is intentional: `rusty_ffmpeg 0.16.7+ffmpeg.8` probes all
+seven even when an application directly calls only a subset.
+
+The SDK uses `--disable-gpl --disable-nonfree --disable-version3`, together with
+`--disable-static --enable-shared --disable-programs --disable-autodetect`. A
+post-build test loads `libavutil`, verifies the runtime-reported FFmpeg version,
+license and configuration, checks all seven development packages, and records
+the dynamic dependencies of every library.
+
+zlib 1.3.1 is built from pinned source as the SDK's sole third-party dependency
+and is statically included so PNG corpus decoding works without another runtime
+library. This is separate from the static CLI dependency prefix.
+
+Release tags and assets use the `ffmpeg-8.0.3-shared-*` naming scheme, so they
+cannot collide with the static CLI releases. Each release also includes the
+exact signed upstream source archive and checksums.
+
+### Building the shared SDK locally
+
+```sh
+export FFMPEG_TAG=n8.0.3
+export VERSION=8.0.3
+export ASSET_BASE=ffmpeg-8.0.3-shared-linux-x64
+bash scripts/install-build-tools.sh
+bash scripts/build-shared-sdk-deps.sh
+bash scripts/build-shared-sdk.sh
+bash scripts/verify-shared-sdk.sh
+bash scripts/package-shared-sdk.sh
+```
+
+To publish all five targets, run **Build FFmpeg shared SDK (LGPL)** from the
+Actions tab. Its release job runs only after every target passes verification.
+
+For `rusty_ffmpeg`/`rsmpeg`, point `FFMPEG_PKG_CONFIG_PATH` at the extracted
+`lib/pkgconfig` directory and set `FFMPEG_LINK_MODE=dynamic`.
 
 ---
 
@@ -232,6 +289,7 @@ glibc, so it will not carry the 2.35 floor that the CI container guarantees.
 ```
 .
 ├── .github/workflows/build.yml   # 5-target matrix, manual dispatch, release
+├── .github/workflows/build-shared-sdk.yml # independent shared SDK release
 ├── scripts/
 │   ├── versions.sh               # pinned dependency versions (the cache key)
 │   ├── common.sh                 # platform detection, paths, toolchain env
@@ -240,7 +298,12 @@ glibc, so it will not carry the 2.35 floor that the CI container guarantees.
 │   ├── build-ffmpeg.sh           # configure options + build + binary extraction
 │   ├── verify-license.sh         # license gate + audit report
 │   ├── package.sh                # archive containing only ffmpeg + ffprobe
-│   └── release-notes.sh          # release body with the download table
+│   ├── release-notes.sh          # release body with the download table
+│   ├── build-shared-sdk-deps.sh  # isolated, pinned zlib build
+│   ├── build-shared-sdk.sh       # pinned FFmpeg 8 shared libraries
+│   ├── verify-shared-sdk.sh      # SDK ABI/license/runtime audit
+│   ├── package-shared-sdk.sh     # relocatable SDK archive
+│   └── release-notes-shared-sdk.sh # shared SDK release body
 └── README.md
 ```
 
