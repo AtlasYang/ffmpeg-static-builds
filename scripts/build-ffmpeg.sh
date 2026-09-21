@@ -64,6 +64,15 @@ case "$PLATFORM" in
     linux)
         CONFIGURE_ARGS+=(
             --enable-pthreads
+            # One vendor-neutral Linux hardware API. FFmpeg resolves the Vulkan
+            # loader at runtime; only pinned headers are present at build time.
+            --enable-vulkan
+            --disable-vaapi
+            --disable-vdpau
+            --disable-libdrm
+            --disable-v4l2-m2m
+            --disable-libmfx
+            --disable-libvpl
             # Keep libgcc inside the binary; glibc itself stays dynamic, which is
             # the only combination that reliably works on Linux.
             --extra-ldflags="-static-libgcc"
@@ -72,9 +81,7 @@ case "$PLATFORM" in
     macos)
         CONFIGURE_ARGS+=(
             --enable-pthreads
-            # No VideoToolbox: hardware H.264/HEVC encoding is explicitly out of
-            # scope, and leaving it out keeps the feature set identical across
-            # all five targets.
+            --enable-videotoolbox
             --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
             --extra-ldflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
         )
@@ -83,6 +90,10 @@ case "$PLATFORM" in
         CONFIGURE_ARGS+=(
             --enable-w32threads
             --disable-pthreads
+            --enable-d3d11va
+            --enable-d3d12va
+            --enable-dxva2
+            --enable-mediafoundation
             # -static removes the last MinGW runtime DLL dependencies, so the
             # .exe files run on a bare Windows install.
             --extra-ldflags="-static -static-libgcc"

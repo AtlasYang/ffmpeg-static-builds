@@ -7,12 +7,11 @@
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-SHARED_SDK_FFMPEG_TAG="n8.0.3"
-: "${FFMPEG_TAG:=$SHARED_SDK_FFMPEG_TAG}"
-[ "$FFMPEG_TAG" = "$SHARED_SDK_FFMPEG_TAG" ] || {
-    echo "shared SDK ABI is pinned to $SHARED_SDK_FFMPEG_TAG, got $FFMPEG_TAG" >&2
-    exit 1
-}
+: "${FFMPEG_TAG:?FFMPEG_TAG must be n8.0.3 or n9.0.1}"
+case "$FFMPEG_TAG" in
+    n8.0.3|n9.0.1) ;;
+    *) echo "unsupported shared SDK FFmpeg tag: $FFMPEG_TAG" >&2; exit 1 ;;
+esac
 
 SDK_PREFIX="${SDK_PREFIX:-$BUILD_ROOT/shared-sdk-prefix}"
 SHARED_SDK_DEPS_PREFIX="${SHARED_SDK_DEPS_PREFIX:-$BUILD_ROOT/shared-sdk-deps-prefix}"
@@ -69,18 +68,35 @@ CONFIGURE_ARGS=(
 
 case "$PLATFORM" in
     linux)
-        CONFIGURE_ARGS+=(--enable-pthreads)
+        CONFIGURE_ARGS+=(
+            --enable-pthreads
+            --enable-vulkan
+            --disable-vaapi
+            --disable-vdpau
+            --disable-libdrm
+            --disable-v4l2-m2m
+            --disable-libmfx
+            --disable-libvpl
+        )
         ;;
     macos)
         CONFIGURE_ARGS+=(
             --enable-pthreads
+            --enable-videotoolbox
             --install-name-dir=@rpath
             --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
             --extra-ldflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
         )
         ;;
     win)
-        CONFIGURE_ARGS+=(--enable-w32threads --disable-pthreads)
+        CONFIGURE_ARGS+=(
+            --enable-w32threads
+            --disable-pthreads
+            --enable-d3d11va
+            --enable-d3d12va
+            --enable-dxva2
+            --enable-mediafoundation
+        )
         ;;
 esac
 

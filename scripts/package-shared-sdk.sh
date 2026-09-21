@@ -4,8 +4,10 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 SDK_PREFIX="${SDK_PREFIX:-$BUILD_ROOT/shared-sdk-prefix}"
+SHARED_SDK_DEPS_PREFIX="${SHARED_SDK_DEPS_PREFIX:-$BUILD_ROOT/shared-sdk-deps-prefix}"
 FFMPEG_SOURCE_DIR="${FFMPEG_SOURCE_DIR:-$SRC_DIR/ffmpeg-shared-sdk}"
 ZLIB_SOURCE_DIR="$SRC_DIR/zlib-shared-sdk"
+VULKAN_HEADERS_SOURCE_DIR="$SRC_DIR/vulkan-headers-shared-sdk"
 LIBRARIES=(avcodec avdevice avfilter avformat avutil swresample swscale)
 PACKAGE_ROOT="$BUILD_ROOT/shared-sdk-package"
 STAGE="$PACKAGE_ROOT/$ASSET_BASE"
@@ -52,6 +54,20 @@ for notice in COPYING.LGPLv2.1 COPYING.LGPLv3 LICENSE.md CREDITS; do
 done
 cp "$ZLIB_SOURCE_DIR/LICENSE" "$STAGE/licenses/zlib/"
 
+if [ "$PLATFORM" = "linux" ]; then
+    [ -d "$SHARED_SDK_DEPS_PREFIX/include/vulkan" ] || {
+        echo "missing packaged Vulkan headers" >&2
+        exit 1
+    }
+    cp -R "$SHARED_SDK_DEPS_PREFIX/include/vulkan" "$STAGE/include/"
+    cp -R "$SHARED_SDK_DEPS_PREFIX/include/vk_video" "$STAGE/include/"
+    mkdir -p "$STAGE/licenses/Vulkan-Headers"
+    cp "$VULKAN_HEADERS_SOURCE_DIR/LICENSE.md" \
+        "$STAGE/licenses/Vulkan-Headers/"
+    cp -R "$VULKAN_HEADERS_SOURCE_DIR/LICENSES" \
+        "$STAGE/licenses/Vulkan-Headers/"
+fi
+
 cat > "$STAGE/README.txt" <<EOF
 FFmpeg shared SDK $VERSION ($PLATFORM-$ARCH)
 
@@ -67,9 +83,11 @@ application packaging mechanism.
 When building rusty_ffmpeg/rsmpeg against this SDK, also set
 FFMPEG_LINK_MODE=dynamic and FFMPEG_PKG_CONFIG_PATH=<archive>/lib/pkgconfig.
 
-The libraries are replaceable with ABI-compatible FFmpeg 8 builds. License
-notices are under licenses/FFmpeg and licenses/zlib. Full build configuration
-is published beside this archive as $ASSET_BASE.configure.txt.
+The libraries are replaceable with ABI-compatible FFmpeg ${VERSION%%.*} builds.
+License notices are under licenses/. On Linux, Vulkan headers are included for
+the public FFmpeg Vulkan API; libvulkan.so.1, an ICD and a Vulkan Video-capable
+GPU driver must be supplied by the target system. Full build configuration is
+published beside this archive as $ASSET_BASE.configure.txt.
 EOF
 
 # Prove that the rewritten pkg-config files work from their staged, relocated
@@ -77,6 +95,10 @@ EOF
 RELOCATE_AUDIT="$PACKAGE_ROOT/relocate-audit.c"
 cat > "$RELOCATE_AUDIT" <<'EOF'
 #include <libavutil/avutil.h>
+#include <libavutil/hwcontext.h>
+#ifdef __linux__
+#include <libavutil/hwcontext_vulkan.h>
+#endif
 int main(void) { return avutil_version() == 0; }
 EOF
 PKG_CONFIG_PATH="$STAGE/lib/pkgconfig" cc "$RELOCATE_AUDIT" \

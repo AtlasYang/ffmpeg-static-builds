@@ -163,6 +163,21 @@ build_webp() {
     stamp_write webp
 }
 
+# ---------------------------------------------------------------------------
+# Vulkan-Headers (Apache-2.0 OR MIT) - compile-time Vulkan Video API only.
+# FFmpeg loads the system Vulkan loader/ICD at runtime, so no Vulkan library or
+# vendor SDK is linked into the portable Linux executables.
+# ---------------------------------------------------------------------------
+build_vulkan_headers() {
+    [ "$PLATFORM" = "linux" ] || return 0
+    stamp_done vulkan-headers && { log "Vulkan-Headers: cached"; return 0; }
+    fetch_source vulkan-headers \
+        https://github.com/KhronosGroup/Vulkan-Headers.git \
+        "$VULKAN_HEADERS_VERSION"
+    cmake_build "$SRC_DIR/vulkan-headers"
+    stamp_write vulkan-headers
+}
+
 build_zlib
 build_ogg
 build_vorbis
@@ -171,6 +186,7 @@ build_vpx
 build_dav1d
 build_aom
 build_webp
+build_vulkan_headers
 
 log "dependencies installed into $PREFIX"
 ls -1 "$PREFIX/lib" | sed 's/^/    /'

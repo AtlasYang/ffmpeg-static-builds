@@ -55,6 +55,28 @@ for option in "${REQUIRED[@]}"; do
 done
 [ "$violations" -eq 0 ] || { echo "refusing to publish this SDK" >&2; exit 1; }
 
+require_build_option() {
+    grep -qF -- "$1" <<<"$BUILDCONF" || {
+        echo "HWACCEL VIOLATION: configuration is missing $1" >&2
+        exit 1
+    }
+}
+case "$PLATFORM" in
+    linux)
+        for option in --enable-vulkan --disable-vaapi --disable-vdpau \
+            --disable-libdrm --disable-v4l2-m2m --disable-libmfx --disable-libvpl; do
+            require_build_option "$option"
+        done
+        ;;
+    macos) require_build_option --enable-videotoolbox ;;
+    win)
+        for option in --enable-d3d11va --enable-d3d12va --enable-dxva2 \
+            --enable-mediafoundation; do
+            require_build_option "$option"
+        done
+        ;;
+esac
+
 for library in "${LIBRARIES[@]}"; do
     [ -d "$SDK_PREFIX/include/lib$library" ] || {
         echo "missing headers for lib$library" >&2
@@ -80,32 +102,81 @@ rm -rf "$AUDIT_DIR"
 mkdir -p "$AUDIT_DIR"
 cat > "$AUDIT_DIR/audit.c" <<'EOF'
 #include <stdio.h>
+#include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
+#include <libavutil/hwcontext.h>
 int main(void) {
     printf("version: %s\n", av_version_info());
     printf("license: %s\n", avutil_license());
     printf("configuration: %s\n", avutil_configuration());
+    enum AVHWDeviceType type = AV_HWDEVICE_TYPE_NONE;
+    while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
+        printf("hwdevice: %s\n", av_hwdevice_get_type_name(type));
+    const char *encoders[] = {
+        "h264_vulkan", "hevc_vulkan", "av1_vulkan",
+        "h264_videotoolbox", "hevc_videotoolbox",
+        "h264_mf", "hevc_mf", NULL
+    };
+    for (const char **name = encoders; *name; name++)
+        if (avcodec_find_encoder_by_name(*name))
+            printf("encoder: %s\n", *name);
     return 0;
 }
 EOF
 cc "$AUDIT_DIR/audit.c" -o "$AUDIT_DIR/audit$EXE" \
-    $(pkg-config --cflags --libs libavutil)
+    $(pkg-config --cflags --libs libavcodec libswresample libavutil)
 
 case "$PLATFORM" in
     linux) RUNTIME_REPORT="$(LD_LIBRARY_PATH="$SDK_PREFIX/lib" "$AUDIT_DIR/audit$EXE")" ;;
     macos) RUNTIME_REPORT="$(DYLD_LIBRARY_PATH="$SDK_PREFIX/lib" "$AUDIT_DIR/audit$EXE")" ;;
     win) RUNTIME_REPORT="$(PATH="$SDK_PREFIX/bin:$PATH" "$AUDIT_DIR/audit$EXE")" ;;
 esac
-grep -q '^version: n\?8\.0\.3$' <<<"$RUNTIME_REPORT" || {
+RUNTIME_VERSION="$(sed -n 's/^version: //p' <<<"$RUNTIME_REPORT")"
+if [ "${RUNTIME_VERSION#n}" != "$VERSION" ]; then
     echo "unexpected FFmpeg runtime version" >&2
     printf '%s\n' "$RUNTIME_REPORT" >&2
     exit 1
-}
+fi
 grep -q '^license: LGPL version 2\.1 or later$' <<<"$RUNTIME_REPORT" || {
     echo "unexpected FFmpeg runtime license" >&2
     printf '%s\n' "$RUNTIME_REPORT" >&2
     exit 1
 }
+
+require_runtime_feature() {
+    grep -qFx -- "$1" <<<"$RUNTIME_REPORT" || {
+        echo "missing shared SDK runtime feature: $1" >&2
+        printf '%s\n' "$RUNTIME_REPORT" >&2
+        exit 1
+    }
+}
+case "$PLATFORM" in
+    linux)
+        require_runtime_feature "hwdevice: vulkan"
+        UNEXPECTED_HWDEVICES="$(sed -n 's/^hwdevice: //p' <<<"$RUNTIME_REPORT" \
+            | grep -vx 'vulkan' || true)"
+        [ -z "$UNEXPECTED_HWDEVICES" ] || {
+            echo "Linux shared SDK must expose Vulkan only; unexpected devices:" >&2
+            printf '%s\n' "$UNEXPECTED_HWDEVICES" >&2
+            exit 1
+        }
+        require_runtime_feature "encoder: h264_vulkan"
+        require_runtime_feature "encoder: hevc_vulkan"
+        require_runtime_feature "encoder: av1_vulkan"
+        ;;
+    macos)
+        require_runtime_feature "hwdevice: videotoolbox"
+        require_runtime_feature "encoder: h264_videotoolbox"
+        require_runtime_feature "encoder: hevc_videotoolbox"
+        ;;
+    win)
+        require_runtime_feature "hwdevice: d3d11va"
+        require_runtime_feature "hwdevice: d3d12va"
+        require_runtime_feature "hwdevice: dxva2"
+        require_runtime_feature "encoder: h264_mf"
+        require_runtime_feature "encoder: hevc_mf"
+        ;;
+esac
 
 {
     echo "FFmpeg shared SDK build report"
@@ -121,6 +192,9 @@ grep -q '^license: LGPL version 2\.1 or later$' <<<"$RUNTIME_REPORT" || {
     echo "Pinned dependency"
     echo "-----------------"
     echo "zlib            $ZLIB_VERSION (zlib license; statically included)"
+    if [ "$PLATFORM" = "linux" ]; then
+        echo "Vulkan-Headers  $VULKAN_HEADERS_VERSION (Apache-2.0 OR MIT; headers only)"
+    fi
     echo
     echo "Runtime identity"
     echo "----------------"

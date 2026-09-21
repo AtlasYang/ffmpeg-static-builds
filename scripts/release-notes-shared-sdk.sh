@@ -21,7 +21,7 @@ human_size() { numfmt --to=iec-i --suffix=B --format='%.1f' < <(stat -c %s "$1")
 {
     echo "# FFmpeg ${VERSION} shared SDK"
     echo
-    echo "LGPL-2.1-or-later shared FFmpeg 8 SDK for dynamic-link consumers."
+    echo "LGPL-2.1-or-later shared FFmpeg ${VERSION%%.*} SDK for dynamic-link consumers."
     echo "This release is independent from the repository's static CLI release line."
     echo
     echo "Each archive includes the seven libraries expected by rusty_ffmpeg"
@@ -30,6 +30,9 @@ human_size() { numfmt --to=iec-i --suffix=B --format='%.1f' < <(stat -c %s "$1")
     echo "applicable, and FFmpeg license notices."
     echo "Pinned zlib ${ZLIB_VERSION:-v1.3.1} is statically included for PNG decoding;"
     echo "its license is included in every archive."
+    echo "Hardware APIs are VideoToolbox on macOS, D3D11VA/D3D12VA/DXVA2 plus"
+    echo "Media Foundation on Windows, and Vulkan Video only on Linux. Linux archives"
+    echo "include pinned Vulkan headers; the loader, ICD and GPU driver remain system components."
     echo
     echo "Built with \`--disable-gpl --disable-nonfree --disable-version3\`,"
     echo "\`--disable-static --enable-shared --disable-programs\`."

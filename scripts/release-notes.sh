@@ -37,7 +37,9 @@ human_size() {
     echo
     echo "Built with \`--disable-gpl --disable-nonfree --disable-version3 --disable-autodetect\`."
     echo "**No GPL or nonfree components are included** (no x264, x265, Xvid or FDK-AAC),"
-    echo "so H.264/HEVC encoding is not available. See the license section below."
+    echo "while platform hardware encoders may provide H.264/HEVC encoding."
+    echo "Hardware APIs are VideoToolbox on macOS, D3D11VA/D3D12VA/DXVA2 plus"
+    echo "Media Foundation on Windows, and Vulkan Video only on Linux."
     echo
     echo "## Downloads"
     echo
@@ -72,7 +74,8 @@ human_size() {
     echo
     echo "These binaries are licensed under **LGPL-2.1-or-later**."
     echo "Included third-party libraries: libopus, libvorbis/libogg, libvpx, dav1d, libaom,"
-    echo "libwebp and zlib - all BSD/MIT/zlib style licenses."
+    echo "libwebp and zlib - all BSD/MIT/zlib style licenses. Linux builds also use"
+    echo "pinned Vulkan-Headers under Apache-2.0 OR MIT; no Vulkan loader or driver is bundled."
     echo
     echo "The \`*.configure.txt\` asset of each target contains the full configure option"
     echo "list, the \`ffmpeg -version\` output, the pinned dependency versions and the"

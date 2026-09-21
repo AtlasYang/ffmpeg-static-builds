@@ -14,9 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       ffmpeg_version:
-        description: "FFmpeg release tag to build (as published in the FFmpeg git repo, e.g. n9.0.1)"
+        description: "FFmpeg release tag to build"
         required: true
-        # Latest stable release tag at the time this workflow was written.
+        type: choice
+        options:
+          - "n9.0.1"
+          - "n8.0.3"
         default: "n9.0.1"
       draft_release:
         description: "Create the GitHub Release as a draft"
@@ -56,14 +59,17 @@ jobs:
           set -euo pipefail
           ffmpeg_tag="$FFMPEG_VERSION_INPUT"
           case "$ffmpeg_tag" in
-              *[!A-Za-z0-9._-]*) echo "invalid FFmpeg tag: $ffmpeg_tag" >&2; exit 1 ;;
+              n8.0.3|n9.0.1) ;;
+              *) echo "unsupported FFmpeg tag: $ffmpeg_tag" >&2; exit 1 ;;
           esac
           # Strip the leading "n" of the FFmpeg git tag: n9.0.1 -> 9.0.1
           version="${ffmpeg_tag#n}"
           release_tag="ffmpeg-${version}-build${RUN_NUMBER}"
-          echo "ffmpeg_tag=${ffmpeg_tag}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          {
+            echo "ffmpeg_tag=${ffmpeg_tag}"
+            echo "version=${version}"
+            echo "release_tag=${release_tag}"
+          } >> "$GITHUB_OUTPUT"
           echo "Building FFmpeg ${ffmpeg_tag} -> release ${release_tag}"
 
   # ---------------------------------------------------------------------------

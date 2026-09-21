@@ -4,7 +4,7 @@ This repository has two independent LGPL-only release lines for Windows, Linux
 and macOS:
 
 - statically linked `ffmpeg` and `ffprobe` command line executables;
-- an FFmpeg 8.0.3 shared SDK for dynamic-link consumers such as rsmpeg.
+- FFmpeg 8.0.3 and 9.0.1 shared SDKs for dynamic-link consumers such as rsmpeg.
 
 They use separate workflows, scripts, asset names and release tags. The shared SDK
 pipeline does not change the existing static CLI artifacts. Keeping both here
@@ -41,10 +41,10 @@ are deliberately kept at LGPL-2.1-or-later.
 
 ### What this means for encoding
 
-H.264 and HEVC encoding are **not available**, because the encoders for them
-(x264, x265) are GPL and libfdk-aac is nonfree. Decoding H.264/HEVC works
-through FFmpeg's own LGPL decoders. Available video encoders are VP8, VP9
-(libvpx), AV1 (libaom) and the native LGPL encoders that ship with FFmpeg.
+The GPL x264/x265 software encoders are not included. H.264 and HEVC hardware
+encoding is nevertheless available when the operating system, GPU and driver
+expose it through VideoToolbox (macOS), Media Foundation/D3D12VA (Windows), or
+Vulkan Video (Linux). Codec patent licensing remains separate from the LGPL.
 
 ---
 
@@ -64,13 +64,14 @@ runner image.
 | [dav1d](https://code.videolan.org/videolan/dav1d) | 1.5.4   | BSD-2-Clause                          | AV1 decoding    |
 | [libaom](https://aomedia.googlesource.com/aom)    | v3.15.0 | BSD-2-Clause + AOM Patent License 1.0 | AV1 encoding    |
 | [libwebp](https://github.com/webmproject/libwebp) | v1.6.0  | BSD-3-Clause                          | WebP images     |
+| [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | v1.4.330 | Apache-2.0 OR MIT | Linux Vulkan Video build/public headers |
 
 FFmpeg itself is LGPL-2.1-or-later under this configuration.
 
 Codec **patent** licensing is a separate matter from copyright licensing and is
 not covered by the LGPL. AV1 is distributed under the Alliance for Open Media
-Patent License 1.0; no patent-encumbered encoders such as H.264, HEVC or AAC-LC
-(FDK) are included in these builds.
+Patent License 1.0. No third-party H.264/HEVC software encoder or FDK-AAC is
+bundled; platform hardware APIs may still expose those patented codecs.
 
 ### Deliberately excluded
 
@@ -81,8 +82,23 @@ Patent License 1.0; no patent-encumbered encoders such as H.264, HEVC or AAC-LC
   `--disable-autodetect`: **`https://` inputs are not supported.** Local files,
   pipes and plain `http://` work.
 - iconv, so `-sub_charenc` subtitle charset conversion is unavailable.
-- VideoToolbox and every other hardware acceleration backend, keeping the five
-  targets feature-identical.
+- Vendor-specific Linux acceleration APIs (VAAPI, VDPAU, QSV and V4L2 M2M).
+  Linux uses Vulkan Video exclusively; the system supplies `libvulkan.so.1`,
+  its ICD and the GPU driver.
+
+### Hardware acceleration
+
+| Platform | Enabled APIs | Build dependencies | Runtime dependencies |
+| :------- | :----------- | :----------------- | :------------------- |
+| Windows | D3D11VA, D3D12VA, DXVA2, Media Foundation | MinGW-w64 Windows SDK | Windows and the GPU driver |
+| macOS | VideoToolbox | Xcode SDK frameworks | macOS and the GPU driver |
+| Linux | Vulkan Video only | pinned Vulkan-Headers | `libvulkan.so.1`, a Vulkan ICD and codec-specific Vulkan Video extensions |
+
+FFmpeg 8.0.3 and 9.0.1 include Vulkan hardware decoding for H.264, HEVC and
+AV1, plus H.264 and HEVC Vulkan encoders. The pinned Vulkan 1.4 headers also
+enable VP9 decoding and AV1 encoding at build time. Actual codec/profile support
+must be queried at runtime and varies by GPU and driver. Software codecs remain
+available as a fallback when the caller does not force a hardware device.
 
 ---
 
@@ -173,10 +189,10 @@ distribution.
 
 ---
 
-## FFmpeg 8 shared SDK
+## FFmpeg 8 and 9 shared SDKs
 
 The **Build FFmpeg shared SDK (LGPL)** workflow is a separate release pipeline
-for dynamic-link consumers such as `rsmpeg 0.18`. It is pinned to FFmpeg 8.0.3
+for dynamic-link consumers such as `rsmpeg`. It offers FFmpeg 8.0.3 and 9.0.1
 and produces dynamically linked SDK archives for the same five targets as the
 static CLI pipeline.
 
@@ -186,31 +202,33 @@ Each archive contains:
   and `swscale` libraries;
 - public headers for those seven libraries;
 - relocatable pkg-config files and Windows import libraries;
-- FFmpeg's LGPL license and notice files plus the zlib license.
+- FFmpeg's LGPL license and notice files plus the zlib license, and on Linux
+  the Vulkan-Headers license texts.
 
 The seven-library set is intentional: `rusty_ffmpeg 0.16.7+ffmpeg.8` probes all
 seven even when an application directly calls only a subset.
 
 The SDK uses `--disable-gpl --disable-nonfree --disable-version3`, together with
 `--disable-static --enable-shared --disable-programs --disable-autodetect`. A
-post-build test loads `libavutil`, verifies the runtime-reported FFmpeg version,
-license and configuration, checks all seven development packages, and records
-the dynamic dependencies of every library.
+post-build test loads `libavcodec` and `libavutil`, verifies the runtime-reported
+FFmpeg version, license, configuration and registered hardware backends, checks
+all seven development packages, and records every library's dynamic dependencies.
 
-zlib 1.3.1 is built from pinned source as the SDK's sole third-party dependency
-and is statically included so PNG corpus decoding works without another runtime
-library. This is separate from the static CLI dependency prefix.
+zlib 1.3.1 is built from pinned source and statically included so PNG corpus
+decoding works without another runtime library. Linux SDKs additionally package
+pinned Vulkan public headers, but not the Vulkan loader, ICD or GPU driver. The
+dependency prefix remains separate from the static CLI dependency prefix.
 
-Release tags and assets use the `ffmpeg-8.0.3-shared-*` naming scheme, so they
+Release tags and assets use the `ffmpeg-<version>-shared-*` naming scheme, so they
 cannot collide with the static CLI releases. Each release also includes the
 exact signed upstream source archive and checksums.
 
 ### Building the shared SDK locally
 
 ```sh
-export FFMPEG_TAG=n8.0.3
-export VERSION=8.0.3
-export ASSET_BASE=ffmpeg-8.0.3-shared-linux-x64
+export FFMPEG_TAG=n9.0.1 # n8.0.3 is also supported
+export VERSION=9.0.1
+export ASSET_BASE=ffmpeg-9.0.1-shared-linux-x64
 bash scripts/install-build-tools.sh
 bash scripts/build-shared-sdk-deps.sh
 bash scripts/build-shared-sdk.sh
@@ -236,6 +254,7 @@ from the binary that was actually shipped. It records:
 - the pinned version and license of every bundled third-party library;
 - the complete configure option list, read back via `ffmpeg -buildconf`;
 - the `ffmpeg -version` and `ffprobe -version` output;
+- the registered hardware acceleration methods and platform hardware encoders;
 - on Linux, the highest `GLIBC_*` symbol version the executables require, which
   is what substantiates the glibc 2.35 claim above;
 - the dynamic library dependencies (`ldd` / `otool -L` / `objdump -p`).
@@ -250,7 +269,7 @@ they describe - a link into a CI log that expires is not enough for an audit.
 ### Via GitHub Actions
 
 1. Actions → **Build FFmpeg (LGPL)** → **Run workflow**
-2. `ffmpeg_version` - the FFmpeg git tag to build, e.g. `n9.0.1`
+2. `ffmpeg_version` - choose `n8.0.3` or `n9.0.1`
 3. `draft_release` - create the release as a draft instead of publishing it
 4. `rebuild_deps` - ignore the dependency cache and rebuild every library
 
@@ -299,8 +318,8 @@ glibc, so it will not carry the 2.35 floor that the CI container guarantees.
 │   ├── verify-license.sh         # license gate + audit report
 │   ├── package.sh                # archive containing only ffmpeg + ffprobe
 │   ├── release-notes.sh          # release body with the download table
-│   ├── build-shared-sdk-deps.sh  # isolated, pinned zlib build
-│   ├── build-shared-sdk.sh       # pinned FFmpeg 8 shared libraries
+│   ├── build-shared-sdk-deps.sh  # isolated zlib/Vulkan-Headers build
+│   ├── build-shared-sdk.sh       # FFmpeg 8/9 shared libraries
 │   ├── verify-shared-sdk.sh      # SDK ABI/license/runtime audit
 │   ├── package-shared-sdk.sh     # relocatable SDK archive
 │   └── release-notes-shared-sdk.sh # shared SDK release body
