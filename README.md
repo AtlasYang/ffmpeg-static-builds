@@ -202,8 +202,8 @@ Each archive contains:
   and `swscale` libraries;
 - public headers for those seven libraries;
 - relocatable pkg-config files and Windows import libraries;
-- FFmpeg's LGPL license and notice files plus the zlib license, and on Linux
-  the Vulkan-Headers license texts.
+- FFmpeg's LGPL license and notice files plus the zlib and dav1d licenses, and
+  on Linux the Vulkan-Headers license texts.
 
 The seven-library set is intentional: `rusty_ffmpeg 0.16.7+ffmpeg.8` probes all
 seven even when an application directly calls only a subset.
@@ -215,7 +215,9 @@ FFmpeg version, license, configuration and registered hardware backends, checks
 all seven development packages, and records every library's dynamic dependencies.
 
 zlib 1.3.1 is built from pinned source and statically included so PNG corpus
-decoding works without another runtime library. Linux SDKs additionally package
+decoding works without another runtime library. dav1d 1.5.4 is built the same
+way and statically included, so AV1 decodes in software (`libdav1d`) on every
+target, also where no hardware AV1 decoder exists. Linux SDKs additionally package
 pinned Vulkan public headers, but not the Vulkan loader, ICD or GPU driver. The
 dependency prefix remains separate from the static CLI dependency prefix.
 
@@ -318,7 +320,7 @@ glibc, so it will not carry the 2.35 floor that the CI container guarantees.
 │   ├── verify-license.sh         # license gate + audit report
 │   ├── package.sh                # archive containing only ffmpeg + ffprobe
 │   ├── release-notes.sh          # release body with the download table
-│   ├── build-shared-sdk-deps.sh  # isolated zlib/Vulkan-Headers build
+│   ├── build-shared-sdk-deps.sh  # isolated zlib/dav1d/Vulkan-Headers build
 │   ├── build-shared-sdk.sh       # FFmpeg 8/9 shared libraries
 │   ├── verify-shared-sdk.sh      # SDK ABI/license/runtime audit
 │   ├── package-shared-sdk.sh     # relocatable SDK archive

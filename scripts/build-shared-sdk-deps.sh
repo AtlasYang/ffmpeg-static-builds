@@ -28,6 +28,32 @@ fi
 
 log "installed shared SDK dependency zlib $ZLIB_VERSION"
 
+# dav1d gives the SDK a software AV1 decoder (FFmpeg's native av1 decoder only
+# works through a hardware accelerator). It is linked statically and as PIC
+# into libavcodec, so it adds no runtime library to the archive.
+fetch_source dav1d-shared-sdk https://code.videolan.org/videolan/dav1d.git "$DAV1D_VERSION"
+cd "$SRC_DIR/dav1d-shared-sdk"
+rm -rf _build
+meson setup _build \
+    --prefix="$(native_path "$SHARED_SDK_DEPS_PREFIX")" \
+    --libdir=lib \
+    --buildtype=release \
+    --default-library=static \
+    -Db_staticpic=true \
+    -Denable_tools=false \
+    -Denable_tests=false
+meson compile -C _build -j "$JOBS"
+meson install -C _build
+find "$SHARED_SDK_DEPS_PREFIX/lib" -maxdepth 1 \( -name 'libdav1d*.so*' \
+    -o -name 'libdav1d*.dylib' -o -name 'libdav1d*.dll.a' \) -delete
+find "$SHARED_SDK_DEPS_PREFIX/bin" -maxdepth 1 -name '*dav1d*.dll' -delete 2>/dev/null || true
+[ -f "$SHARED_SDK_DEPS_PREFIX/lib/libdav1d.a" ] || {
+    echo "dav1d did not install a static library" >&2
+    exit 1
+}
+
+log "installed shared SDK dependency dav1d $DAV1D_VERSION"
+
 if [ "$PLATFORM" = "linux" ]; then
     fetch_source vulkan-headers-shared-sdk \
         https://github.com/KhronosGroup/Vulkan-Headers.git \

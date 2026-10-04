@@ -6,6 +6,7 @@ VERSION="${1:?usage: release-notes-shared-sdk.sh <version> <release-tag> <asset-
 RELEASE_TAG="${2:?}"
 ASSET_DIR="${3:?}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}"
+. "$(dirname "${BASH_SOURCE[0]}")/versions.sh"
 DL_BASE="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
 
 TARGETS=(
@@ -28,8 +29,10 @@ human_size() { numfmt --to=iec-i --suffix=B --format='%.1f' < <(stat -c %s "$1")
     echo "(avcodec, avdevice, avfilter, avformat, avutil, swresample and swscale),"
     echo "their headers, relocatable pkg-config metadata, import libraries where"
     echo "applicable, and FFmpeg license notices."
-    echo "Pinned zlib ${ZLIB_VERSION:-v1.3.1} is statically included for PNG decoding;"
+    echo "Pinned zlib ${ZLIB_VERSION} is statically included for PNG decoding;"
     echo "its license is included in every archive."
+    echo "Pinned dav1d ${DAV1D_VERSION} is statically included for software AV1 decoding;"
+    echo "its license is included as well."
     echo "Hardware APIs are VideoToolbox on macOS, D3D11VA/D3D12VA/DXVA2 plus"
     echo "Media Foundation on Windows, and Vulkan Video only on Linux. Linux archives"
     echo "include pinned Vulkan headers; the loader, ICD and GPU driver remain system components."

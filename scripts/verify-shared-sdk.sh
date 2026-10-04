@@ -38,6 +38,7 @@ REQUIRED=(
     --disable-programs
     --disable-static
     --enable-shared
+    --enable-libdav1d
 )
 
 violations=0
@@ -120,6 +121,8 @@ int main(void) {
     for (const char **name = encoders; *name; name++)
         if (avcodec_find_encoder_by_name(*name))
             printf("encoder: %s\n", *name);
+    if (avcodec_find_decoder_by_name("libdav1d"))
+        printf("decoder: libdav1d\n");
     return 0;
 }
 EOF
@@ -150,6 +153,7 @@ require_runtime_feature() {
         exit 1
     }
 }
+require_runtime_feature "decoder: libdav1d"
 case "$PLATFORM" in
     linux)
         require_runtime_feature "hwdevice: vulkan"
@@ -178,6 +182,17 @@ case "$PLATFORM" in
         ;;
 esac
 
+# dav1d is statically included; libavcodec must not need a separate dav1d library.
+case "$PLATFORM" in
+    linux) avcodec_deps="$(readelf -d "$SDK_PREFIX"/lib/libavcodec.so.* 2>&1)" ;;
+    macos) avcodec_deps="$(otool -L "$SDK_PREFIX"/lib/libavcodec*.dylib 2>&1)" ;;
+    win) avcodec_deps="$(objdump -p "$SDK_PREFIX"/bin/avcodec-*.dll 2>&1)" ;;
+esac
+if grep -qi 'dav1d' <<<"$avcodec_deps"; then
+    echo "libavcodec links dav1d dynamically; it must be statically included" >&2
+    exit 1
+fi
+
 {
     echo "FFmpeg shared SDK build report"
     echo "====================================="
@@ -189,9 +204,10 @@ esac
     echo "Built at (UTC) : $(date -u '+%Y-%m-%d %H:%M:%S')"
     echo "License        : LGPL-2.1-or-later"
     echo
-    echo "Pinned dependency"
-    echo "-----------------"
+    echo "Pinned dependencies"
+    echo "-------------------"
     echo "zlib            $ZLIB_VERSION (zlib license; statically included)"
+    echo "dav1d           $DAV1D_VERSION (BSD-2-Clause; statically included)"
     if [ "$PLATFORM" = "linux" ]; then
         echo "Vulkan-Headers  $VULKAN_HEADERS_VERSION (Apache-2.0 OR MIT; headers only)"
     fi
